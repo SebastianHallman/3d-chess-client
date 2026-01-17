@@ -1,0 +1,233 @@
+:root {
+  color-scheme: light;
+  font-family: "Trebuchet MS", "Lucida Sans Unicode", "Lucida Grande", "Lucida Sans", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f7f4ef;
+  color: #1d1d1d;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.scene {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.login {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top, #f7f0e1, #d6c5ad);
+  z-index: 3;
+}
+
+.login-card {
+  background: rgba(255, 255, 255, 0.85);
+  padding: 2.5rem;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(74, 53, 35, 0.2);
+  text-align: center;
+  display: grid;
+  gap: 1rem;
+  max-width: 320px;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.login-card p {
+  margin: 0;
+  color: #4a3523;
+}
+
+.login-status {
+  min-height: 1.2rem;
+  font-size: 0.85rem;
+  color: #7a2f2f;
+}
+
+.login-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.8rem 1.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+  background: #2c1f16;
+  color: #f7f4ef;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.login-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(44, 31, 22, 0.2);
+}
+
+.login-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.menu {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: rgba(245, 240, 230, 0.92);
+  border: 1px solid rgba(74, 53, 35, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(39, 28, 18, 0.12);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+  min-width: 180px;
+}
+
+.menu--hidden {
+  display: none;
+}
+
+.hud-title {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+
+.hud-input {
+  width: 7.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 53, 35, 0.3);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #2c1f16;
+  background: #fdfaf4;
+}
+
+.hud-input:focus {
+  outline: none;
+  border-color: #7a5c3e;
+  box-shadow: 0 0 0 2px rgba(122, 92, 62, 0.2);
+}
+
+.hud-label {
+  color: #4a3523;
+}
+
+.hud-value {
+  font-weight: 600;
+}
+
+.hud-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: #7a5c3e;
+  color: #f7f4ef;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.hud-button.muted {
+  background: #b6a089;
+  color: #2c1f16;
+}
+
+.hud-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(74, 53, 35, 0.2);
+}
+
+.hud-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.board-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  font-family: "Trebuchet MS", "Lucida Sans Unicode", "Lucida Grande", "Lucida Sans", Arial, sans-serif;
+}
+
+.board-side {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1.2rem;
+  background: rgba(250, 247, 240, 0.85);
+  border-radius: 999px;
+  border: 1px solid rgba(44, 31, 22, 0.2);
+  box-shadow: 0 8px 20px rgba(39, 28, 18, 0.12);
+}
+
+.board-side--black {
+  top: 1.25rem;
+}
+
+.board-side--white {
+  bottom: 1.25rem;
+}
+
+.board-name {
+  font-weight: 600;
+}
+
+.board-clock {
+  min-width: 4.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-result {
+  position: absolute;
+  right: 1.5rem;
+  top: 1.5rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(44, 31, 22, 0.85);
+  color: #f7f4ef;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
