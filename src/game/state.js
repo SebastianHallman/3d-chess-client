@@ -22,6 +22,40 @@ export class GameState {
     return this.chess.moves({ square, verbose: true });
   }
 
+  getHistory() {
+    try {
+      return this.chess.history({ verbose: true });
+    } catch (error) {
+      return this.chess.history();
+    }
+  }
+
+  getPgnMoves() {
+    const pgn = this.chess.pgn();
+    if (!pgn) {
+      return [];
+    }
+    const movesOnly = pgn
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("["))
+      .join(" ");
+    const tokens = movesOnly
+      .replace(/\{[^}]*\}/g, "")
+      .replace(/\([^)]*\)/g, "")
+      .replace(/\d+\.(\.\.)?/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ");
+    return tokens.filter(
+      (token) =>
+        token &&
+        token !== "1-0" &&
+        token !== "0-1" &&
+        token !== "1/2-1/2" &&
+        token !== "*"
+    );
+  }
+
   loadPosition(fen) {
     const ok = this.chess.load(fen);
     if (ok) {
