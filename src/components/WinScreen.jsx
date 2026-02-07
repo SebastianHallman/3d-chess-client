@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function WinScreen({ visible, summary, onRematch, onBack }) {
+export default function WinScreen({ visible, summary, onRematch, onBack, onAnalyze }) {
   if (!visible || !summary) {
     return null;
   }
@@ -45,6 +45,11 @@ export default function WinScreen({ visible, summary, onRematch, onBack }) {
           <button className="hud-button" type="button" onClick={onRematch}>
             Rematch
           </button>
+          {onAnalyze ? (
+            <button className="hud-button" type="button" onClick={onAnalyze}>
+              Analyze
+            </button>
+          ) : null}
           <button className="hud-button muted" type="button" onClick={onBack}>
             Main menu
           </button>

@@ -30,6 +30,10 @@ export class GameState {
     }
   }
 
+  getFen() {
+    return this.chess.fen();
+  }
+
   getPgnMoves() {
     const pgn = this.chess.pgn();
     if (!pgn) {

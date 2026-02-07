@@ -744,6 +744,47 @@ body {
   gap: 0.4rem;
 }
 
+.side-panel-engine {
+  margin-top: 0.5rem;
+  background: rgba(14, 12, 10, 0.55);
+  border-radius: 12px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.side-panel-engine-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.side-panel-engine-lines {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.side-panel-engine-line {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  align-items: start;
+}
+
+.side-panel-engine-score {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.side-panel-engine-pv {
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.3;
+}
+
 .side-panel-status {
   padding: 0.35rem 0.6rem;
   border-radius: 10px;
@@ -783,6 +824,56 @@ body {
 
 .side-panel-move {
   font-weight: 600;
+}
+
+.side-panel-move-btn {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0.1rem 0.2rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.side-panel-move-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.side-panel-move-btn.is-active {
+  background: rgba(180, 131, 80, 0.42);
+  color: #f7f4ef;
+}
+
+.side-panel-move-note {
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 400;
+}
+
+.side-panel-branch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+}
+
+.side-panel-branch-chip {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(180, 131, 80, 0.2);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  padding: 0.06rem 0.35rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.side-panel-branch-chip:hover {
+  background: rgba(180, 131, 80, 0.32);
 }
 
 .side-panel-chat-list {

@@ -48,6 +48,8 @@ export function createSceneInteraction(params) {
   const pointer = new THREE.Vector2();
   const dragLift = 0.25;
   let animationHandle = null;
+  let interactionOverride = null;
+  const isEnabled = () => (interactionOverride ?? isInteractionEnabled());
 
   const updateDragPosition = (event) => {
     const dragState = getDragState();
@@ -76,7 +78,7 @@ export function createSceneInteraction(params) {
   };
 
   const handlePointerMove = (event) => {
-    if (!isInteractionEnabled()) {
+    if (!isEnabled()) {
       return;
     }
     if (getDragState()) {
@@ -99,7 +101,7 @@ export function createSceneInteraction(params) {
   };
 
   const handlePointerDown = (event) => {
-    if (!isInteractionEnabled()) {
+    if (!isEnabled()) {
       return;
     }
     if (getDragState()) {
@@ -176,7 +178,7 @@ export function createSceneInteraction(params) {
   };
 
   const handleClick = (event) => {
-    if (!isInteractionEnabled()) {
+    if (!isEnabled()) {
       return;
     }
     if (getDragState() || getDragJustEnded()) {
@@ -239,7 +241,7 @@ export function createSceneInteraction(params) {
     setCameraSide(nextSide);
     setBaseRotationY(0);
     if (tableGroup) {
-      tableGroup.rotation.y = getBaseRotationY() + (isInteractionEnabled() ? 0 : getSpinAngle());
+      tableGroup.rotation.y = getBaseRotationY() + (isEnabled() ? 0 : getSpinAngle());
     }
     camera.position.copy(cameraPositions[nextSide]);
     controls.target.copy(cameraTargets[nextSide]);
@@ -248,7 +250,7 @@ export function createSceneInteraction(params) {
 
   const animate = () => {
     if (tableGroup) {
-      if (!isInteractionEnabled()) {
+      if (!isEnabled()) {
         setSpinAngle(getSpinAngle() + 0.002);
         tableGroup.rotation.y = getBaseRotationY() + getSpinAngle();
       } else {
@@ -278,5 +280,13 @@ export function createSceneInteraction(params) {
     }
   };
 
-  return { start, stop };
+  const setInteractionOverride = (value) => {
+    if (value === true || value === false) {
+      interactionOverride = value;
+    } else {
+      interactionOverride = null;
+    }
+  };
+
+  return { start, stop, setInteractionOverride };
 }

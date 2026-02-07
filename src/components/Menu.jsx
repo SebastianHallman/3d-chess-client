@@ -29,7 +29,8 @@ export default function Menu({
   onOpponentChange,
   onChallengeOpen,
   onChallengeUser,
-  onPuzzle
+  onPuzzle,
+  onAnalysis
 }) {
   const menuClass = visible ? "menu" : "menu menu--hidden";
   const [customMinutes, setCustomMinutes] = useState(10);
@@ -104,6 +105,10 @@ export default function Menu({
           <button className="menu-tile" type="button" onClick={onPuzzle}>
             <span className="menu-tile-time">Puzzles</span>
             <span className="menu-tile-speed">Daily or next</span>
+          </button>
+          <button className="menu-tile" type="button" onClick={onAnalysis}>
+            <span className="menu-tile-time">Analysis board</span>
+            <span className="menu-tile-speed">Free play</span>
           </button>
         </div>
       )}
