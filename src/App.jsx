@@ -44,6 +44,8 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [promotionRequest, setPromotionRequest] = useState(null);
+  const [analysisLines, setAnalysisLines] = useState([]);
+  const [analysisStatus, setAnalysisStatus] = useState("idle");
   const puzzleUserRating = account?.perfs?.puzzle?.rating;
   const puzzleUserRatingLabel = Number.isFinite(puzzleUserRating) ? String(puzzleUserRating) : "--";
 
@@ -88,7 +90,9 @@ export default function App() {
         setShowWin(true);
       },
       onAccountChange: setAccount,
-      onIncomingChallenge: setIncomingChallenge
+      onIncomingChallenge: setIncomingChallenge,
+      onAnalysisLines: setAnalysisLines,
+      onAnalysisStatus: setAnalysisStatus
     }),
     []
   );
@@ -122,6 +126,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!controllerRef.current) {
+      return;
+    }
+    if (menuMode === "analysis") {
+      controllerRef.current.setInteractionOverride?.(true);
+    } else {
+      controllerRef.current.setInteractionOverride?.(null);
+    }
+  }, [menuMode]);
+
+  useEffect(() => {
     if (!authed) {
       setIncomingChallenge(null);
     }
@@ -146,9 +161,30 @@ export default function App() {
     setMenuMode("puzzles");
   };
 
+  const handleFreeAnalysis = () => {
+    setAnalysisLines([]);
+    setAnalysisStatus("loading");
+    try {
+      controllerRef.current.startFreeAnalysis();
+    } catch (error) {
+      console.error("Failed to start free analysis", error);
+      setAnalysisStatus("error");
+      return;
+    }
+    setMenuMode("analysis");
+    setMenuVisible(false);
+    setShowWin(false);
+  };
+
   const handleBackToMenuFromPuzzle = () => {
     controllerRef.current.exitPuzzle?.();
     setMenuMode("root");
+  };
+
+  const handleBackToMenuFromAnalysis = () => {
+    controllerRef.current.exitAnalysis?.();
+    setMenuMode("root");
+    setShowWin(false);
   };
 
   const handleChallengeUser = (timeControl) => {
@@ -177,6 +213,36 @@ export default function App() {
     setShowWin(false);
     setMenuMode("root");
     setMenuVisible(true);
+  };
+
+  const handleAnalyzeGame = () => {
+    controllerRef.current
+      .startAnalysisFromLastGame()
+      .then((ok) => {
+        if (ok) {
+          setMenuMode("analysis");
+          setMenuVisible(false);
+          setShowWin(false);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleSelectHistoryMove = (ply) => {
+    if (menuMode !== "analysis") {
+      return;
+    }
+    if (!Number.isFinite(Number(ply))) {
+      return;
+    }
+    controllerRef.current.analysisGoToPly?.(ply);
+  };
+
+  const handleSelectAnalysisBranch = (index) => {
+    if (menuMode !== "analysis") {
+      return;
+    }
+    controllerRef.current.analysisGoToBranch?.(index);
   };
 
   const handleSendChat = (text) => {
@@ -276,12 +342,14 @@ export default function App() {
               onChallengeOpen={handleChallengeOpen}
               onChallengeUser={handleChallengeUser}
               onPuzzle={handlePuzzle}
+              onAnalysis={handleFreeAnalysis}
             />
 
             <WinScreen
               visible={showWin}
               summary={winSummary}
               onRematch={handleRematch}
+              onAnalyze={handleAnalyzeGame}
               onBack={handleBackToMenu}
             />
 
@@ -305,23 +373,32 @@ export default function App() {
               puzzleSolution={puzzleSolution}
               canChat={authed && menuMode !== "puzzles"}
               hideTime={menuMode === "puzzles"}
-              hideChat={menuMode === "puzzles"}
-              hideActions={menuMode === "puzzles"}
+              hideChat={menuMode === "puzzles" || menuMode === "analysis"}
+              hideActions={menuMode === "puzzles" || menuMode === "analysis"}
               showPuzzleBack={menuMode === "puzzles"}
               onBackToMenu={handleBackToMenuFromPuzzle}
+              showAnalysisControls={menuMode === "analysis"}
+              onAnalysisPrev={() => controllerRef.current.analysisPrev?.()}
+              onAnalysisNext={() => controllerRef.current.analysisNext?.()}
+              onAnalysisReset={() => controllerRef.current.analysisReset?.()}
+              onExitAnalysis={handleBackToMenuFromAnalysis}
+              analysisLines={analysisLines}
+              analysisStatus={analysisStatus}
+              onAnalysisBranchSelect={handleSelectAnalysisBranch}
+              onMoveHistorySelect={menuMode === "analysis" ? handleSelectHistoryMove : null}
               drawStatus={drawStatus}
               onOfferDraw={
-                menuMode === "puzzles"
+                menuMode === "puzzles" || menuMode === "analysis"
                   ? null
                   : () => controllerRef.current.offerDrawCurrentGame().catch(() => {})
               }
               onDeclineDraw={
-                menuMode === "puzzles" || drawStatus !== "Draw offered"
+                menuMode === "puzzles" || menuMode === "analysis" || drawStatus !== "Draw offered"
                   ? null
                   : () => controllerRef.current.declineDrawCurrentGame().catch(() => {})
               }
               onResign={
-                menuMode === "puzzles"
+                menuMode === "puzzles" || menuMode === "analysis"
                   ? null
                   : () => controllerRef.current.resignCurrentGame().catch(() => {})
               }

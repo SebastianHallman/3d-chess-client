@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Chess } from "chess.js";
 import { GameState } from "./state.js";
 import {
   createLoginUrl,
@@ -40,6 +41,7 @@ import { createViewManager } from "./controller/view.js";
 import { createBoardMaterialManager } from "./controller/materials.js";
 import { createBoardMaterials } from "./controller/boardMaterials.js";
 import { createBoardConfig } from "./controller/boardConfig.js";
+import { createAnalysisEngine } from "./controller/analysisEngine.js";
 import {
   ensureAccount as ensureAccountFn,
   streamEvents as streamEventsFn,
@@ -74,7 +76,11 @@ export function createGameController({
   onMenuVisibility = () => {},
   onGameEnd = () => {},
   onAccountChange = () => {},
-  onIncomingChallenge = () => {}
+  onIncomingChallenge = () => {},
+  onAnalysisLines = () => {},
+  onAnalysisStatus = () => {},
+  onAnalysisBranches = () => {},
+  onAnalysisBranchIndex = () => {}
 } = {}) {
   const lichessConfig = { ...DEFAULT_CONFIG, ...config };
   const gameState = new GameState();
@@ -173,6 +179,18 @@ export function createGameController({
   let spinAngle = 0;
   let accountInfo = null;
   let pendingPromotion = null;
+  let analysisMode = false;
+  let analysisFen = null;
+  let analysisMoves = [];
+  let analysisSanMoves = [];
+  let analysisFenByPly = [];
+  let analysisPly = 0;
+  let analysisSnapshotsByFen = new Map();
+  let analysisVisitedStates = [];
+  let analysisVisitedIndex = -1;
+  let isRestoringAnalysisState = false;
+  let isNavigatingAnalysisPly = false;
+  let lastAnalysisData = null;
 
   const windowListeners = [];
 
@@ -264,6 +282,282 @@ export function createGameController({
   });
   const { setLiveGame, setGameResult, setPlayerInfo } = liveGameManager;
 
+  function computeSanMovesFromLine({ fen, moves }) {
+    const chess = new Chess();
+    if (fen) {
+      const loaded = chess.load(fen);
+      if (!loaded) {
+        return [];
+      }
+    }
+    const san = [];
+    for (const uci of moves || []) {
+      if (!uci || uci.length < 4) {
+        break;
+      }
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length > 4 ? uci[4] : undefined;
+      const move = chess.move({ from, to, promotion });
+      if (!move) {
+        break;
+      }
+      san.push(move.san);
+    }
+    return san;
+  }
+
+  function normalizeFenOrNull(fen) {
+    if (!fen) {
+      return null;
+    }
+    const chess = new Chess();
+    return chess.load(fen) ? fen : null;
+  }
+
+  function computeFenByPly({ fen, moves }) {
+    const chess = new Chess();
+    if (fen) {
+      const loaded = chess.load(fen);
+      if (!loaded) {
+        return [];
+      }
+    }
+    const fens = [chess.fen()];
+    for (const uci of moves || []) {
+      if (!uci || uci.length < 4) {
+        break;
+      }
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length > 4 ? uci[4] : undefined;
+      const move = chess.move({ from, to, promotion });
+      if (!move) {
+        break;
+      }
+      fens.push(chess.fen());
+    }
+    return fens;
+  }
+
+  function toSnapshotLines(lines) {
+    if (!Array.isArray(lines)) {
+      return [];
+    }
+    return lines
+      .filter((line) => line?.line)
+      .map((line) => ({
+        multipv: line.multipv,
+        score: line.score || "",
+        move: String(line.line).split(/\s+/)[0] || ""
+      }));
+  }
+
+  function mergeSnapshotLines(existing, incoming) {
+    const byPv = new Map();
+    for (const line of existing || []) {
+      if (!Number.isFinite(line?.multipv)) {
+        continue;
+      }
+      byPv.set(line.multipv, line);
+    }
+    for (const line of incoming || []) {
+      if (!Number.isFinite(line?.multipv)) {
+        continue;
+      }
+      byPv.set(line.multipv, line);
+    }
+    return Array.from(byPv.values())
+      .sort((a, b) => a.multipv - b.multipv)
+      .slice(0, 3);
+  }
+
+  function emitAnalysisMoveHistory() {
+    if (!analysisMode) {
+      return;
+    }
+    const formatBranchDiffLabel = (state) => {
+      const currentMoves = Array.isArray(analysisMoves) ? analysisMoves : [];
+      const otherMoves = Array.isArray(state?.moves) ? state.moves : [];
+      const max = Math.min(currentMoves.length, otherMoves.length);
+      let diffIndex = 0;
+      while (diffIndex < max && currentMoves[diffIndex] === otherMoves[diffIndex]) {
+        diffIndex += 1;
+      }
+      const ply = diffIndex + 1;
+      if (!Number.isFinite(ply) || ply < 1) {
+        return "none";
+      }
+      const move = state?.sanMoves?.[diffIndex] || "";
+      const currentMove = analysisSanMoves?.[diffIndex] || "";
+      if (move && currentMove && move !== currentMove) {
+        return move;
+      }
+      return "none";
+    };
+
+    const branchStartsByPly = new Map();
+    for (const state of analysisVisitedStates) {
+      if (!Number.isFinite(state?.index)) {
+        continue;
+      }
+      if (state.index === analysisVisitedIndex) {
+        continue;
+      }
+      const currentMoves = Array.isArray(analysisMoves) ? analysisMoves : [];
+      const otherMoves = Array.isArray(state.moves) ? state.moves : [];
+      const max = Math.min(currentMoves.length, otherMoves.length);
+      let diffIndex = 0;
+      while (diffIndex < max && currentMoves[diffIndex] === otherMoves[diffIndex]) {
+        diffIndex += 1;
+      }
+      const diffPly = diffIndex + 1;
+      if (diffPly < 1 || diffPly > analysisSanMoves.length) {
+        continue;
+      }
+      if (!branchStartsByPly.has(diffPly)) {
+        branchStartsByPly.set(diffPly, []);
+      }
+      const label = formatBranchDiffLabel(state);
+      if (label !== "none") {
+        branchStartsByPly.get(diffPly).push({
+          index: state.index,
+          label,
+          ply: state.moves.length
+        });
+      }
+    }
+    const entries = analysisSanMoves.map((san, index) => {
+      const ply = index + 1;
+      const fen = analysisFenByPly[ply] || null;
+      return {
+        san,
+        ply,
+        selected: ply === analysisPly,
+        savedLines: (fen && analysisSnapshotsByFen.get(fen)) || [],
+        branchStarts: branchStartsByPly.get(ply) || []
+      };
+    });
+    onMoveHistoryChange(entries);
+  }
+
+  function emitAnalysisBranchState() {
+    const branches = analysisVisitedStates.map((entry, index) => ({
+      index,
+      ply: entry.moves.length,
+      preview: entry.sanMoves.slice(-4).join(" ")
+    }));
+    onAnalysisBranches(branches);
+    onAnalysisBranchIndex(analysisVisitedIndex);
+  }
+
+  function buildAnalysisStateKey(moves) {
+    return Array.isArray(moves) ? moves.join(" ") : "";
+  }
+
+  function sameUciLine(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function recordAnalysisVisitedState() {
+    if (!analysisMode || isRestoringAnalysisState) {
+      return;
+    }
+    const moves = Array.isArray(analysisMoves) ? analysisMoves.slice() : [];
+    const sanMoves = Array.isArray(analysisSanMoves) ? analysisSanMoves.slice() : [];
+    const key = buildAnalysisStateKey(moves);
+    const existingIndex = analysisVisitedStates.findIndex((entry) => entry.key === key);
+    if (existingIndex !== -1) {
+      analysisVisitedIndex = existingIndex;
+      emitAnalysisBranchState();
+      emitAnalysisMoveHistory();
+      return;
+    }
+    analysisVisitedStates.push({
+      index: analysisVisitedStates.length,
+      key,
+      moves,
+      sanMoves,
+      parentIndex: analysisVisitedIndex,
+      branchStartPly: (() => {
+        if (analysisVisitedIndex < 0 || analysisVisitedIndex >= analysisVisitedStates.length) {
+          return 1;
+        }
+        const parentMoves = analysisVisitedStates[analysisVisitedIndex]?.moves || [];
+        const max = Math.min(parentMoves.length, moves.length);
+        let i = 0;
+        while (i < max && parentMoves[i] === moves[i]) {
+          i += 1;
+        }
+        return i + 1;
+      })()
+    });
+    analysisVisitedIndex = analysisVisitedStates.length - 1;
+    emitAnalysisBranchState();
+    emitAnalysisMoveHistory();
+  }
+
+  function restoreAnalysisVisitedState(index, { stopAtDiff = false } = {}) {
+    if (index < 0 || index >= analysisVisitedStates.length) {
+      return;
+    }
+    const state = analysisVisitedStates[index];
+    if (!state) {
+      return;
+    }
+    const previousMoves = Array.isArray(analysisMoves) ? analysisMoves.slice() : [];
+    isRestoringAnalysisState = true;
+    try {
+      analysisMoves = state.moves.slice();
+      analysisSanMoves = state.sanMoves.slice();
+      analysisFenByPly = computeFenByPly({ fen: analysisFen, moves: analysisMoves });
+      let targetPly = analysisMoves.length;
+      if (stopAtDiff) {
+        const max = Math.min(previousMoves.length, analysisMoves.length);
+        let diffIndex = 0;
+        while (diffIndex < max && previousMoves[diffIndex] === analysisMoves[diffIndex]) {
+          diffIndex += 1;
+        }
+        if (diffIndex < analysisMoves.length) {
+          targetPly = diffIndex + 1;
+        }
+      }
+      loadAnalysisPosition(targetPly);
+      analysisVisitedIndex = index;
+      emitAnalysisBranchState();
+    } finally {
+      isRestoringAnalysisState = false;
+    }
+  }
+
+  const analysisEngine = createAnalysisEngine({
+    onLines: (lines) => {
+      onAnalysisLines(lines);
+      if (!analysisMode) {
+        return;
+      }
+      const snapshot = toSnapshotLines(lines);
+      if (snapshot.length === 0) {
+        return;
+      }
+      const fen = analysisFenByPly[analysisPly] || gameState.getFen();
+      if (fen) {
+        const existing = analysisSnapshotsByFen.get(fen) || [];
+        analysisSnapshotsByFen.set(fen, mergeSnapshotLines(existing, snapshot));
+      }
+      emitAnalysisMoveHistory();
+    },
+    onStatus: onAnalysisStatus
+  });
+
   const squareMaterials = createBoardMaterialManager({
     lightSquare,
     darkSquare,
@@ -296,6 +590,22 @@ export function createGameController({
     flashInvalidMove,
     isLegalDestination
   } = selection;
+
+  function resetPuzzleState({ keepSolution = false } = {}) {
+    resetPuzzleAttempt({ keepSolution });
+    setPuzzleMode([]);
+    onPuzzleStatus("Ready");
+    onPuzzleRating("--");
+    onPuzzleSolution([]);
+  }
+
+  function leaveLiveGame() {
+    liveGameId = null;
+    liveGameColor = null;
+    clockTicker.stop();
+    onDrawStatus("");
+    spinAngle = 0;
+  }
 
   function getPromotionOptions(from, to) {
     const piece = gameState.getPiece(from);
@@ -591,6 +901,13 @@ export function createGameController({
 
   function handleGameEndWithAccount(summary) {
     const previousAccount = accountInfo;
+    if (summary) {
+      lastAnalysisData = {
+        summary,
+        fen: liveInitialFen,
+        moves: Array.isArray(liveMoves) ? liveMoves.slice() : []
+      };
+    }
     onGameEnd(summary);
     const finalize = async () => {
       if (!summary || !isLoggedIn()) {
@@ -679,7 +996,7 @@ export function createGameController({
       boardGroup,
       piecesGroup,
       boardSquaresById,
-      isInteractionEnabled: () => isInteractionEnabled(liveGameId),
+      isInteractionEnabled: () => isInteractionEnabled(liveGameId) || analysisMode,
       getPointerFromEvent,
       pickSquare,
       pickPiece,
@@ -770,14 +1087,71 @@ export function createGameController({
     setPendingSync: (value) => { pendingSync = value; }
   });
   gameState.onChange(handleStateSync);
+  gameState.onChange(() => {
+    if (!analysisMode) {
+      return;
+    }
+    if (isNavigatingAnalysisPly) {
+      analysisEngine.analyze(gameState.getFen());
+      return;
+    }
+    const history = gameState.getHistory();
+    const historyMoves = history.map((move) => `${move.from}${move.to}${move.promotion || ""}`);
+    const lineChanged = !sameUciLine(historyMoves, analysisMoves);
+    if (lineChanged || history.length !== analysisPly || analysisPly >= analysisMoves.length) {
+      analysisMoves = historyMoves;
+      analysisSanMoves = history.map((move) => move.san);
+      analysisPly = analysisMoves.length;
+      analysisFenByPly = computeFenByPly({ fen: analysisFen, moves: analysisMoves });
+      emitAnalysisMoveHistory();
+      recordAnalysisVisitedState();
+    }
+    analysisEngine.analyze(gameState.getFen());
+  });
 
   function exitPuzzle() {
-    resetPuzzleAttempt();
-    setPuzzleMode([]);
-    onPuzzleStatus("Ready");
-    onPuzzleRating("--");
-    onPuzzleSolution([]);
+    resetPuzzleState();
     onMenuVisibility(true);
+  }
+
+  function loadAnalysisPosition(nextPly) {
+    const numericPly = Number(nextPly);
+    if (!Number.isFinite(numericPly)) {
+      return;
+    }
+    const clamped = Math.max(0, Math.min(Math.trunc(numericPly), analysisMoves.length));
+    analysisPly = clamped;
+    moveHistory.setDisplayedHistory([]);
+    // Reverting should be immediate; clear animation gating before loading.
+    isAnimatingMove = false;
+    pendingSync = false;
+    suppressNextSync = false;
+    moveQueue.length = 0;
+    isNavigatingAnalysisPly = true;
+    let loaded = false;
+    try {
+      loaded = gameState.loadFromMoves({
+        fen: analysisFen,
+        moves: analysisMoves.slice(0, analysisPly)
+      });
+      if (!loaded && analysisFen) {
+        loaded = gameState.loadFromMoves({
+          fen: null,
+          moves: analysisMoves.slice(0, analysisPly)
+        });
+        if (loaded) {
+          analysisFen = null;
+          analysisFenByPly = computeFenByPly({ fen: analysisFen, moves: analysisMoves });
+        }
+      }
+    } finally {
+      isNavigatingAnalysisPly = false;
+    }
+    if (!loaded) {
+      return;
+    }
+    syncPieces();
+    emitAnalysisMoveHistory();
   }
 
   return {
@@ -797,6 +1171,7 @@ export function createGameController({
     },
     destroy() {
       abortStreams();
+      analysisEngine.stop();
       destroyScene();
     },
     isLoggedIn() {
@@ -830,6 +1205,15 @@ export function createGameController({
       clearAuth();
       abortStreams();
       setLiveGame(null);
+      analysisMode = false;
+      interactionManager?.setInteractionOverride?.(null);
+      analysisEngine.stop();
+      analysisSanMoves = [];
+      analysisFenByPly = [];
+      analysisSnapshotsByFen = new Map();
+      analysisVisitedStates = [];
+      analysisVisitedIndex = -1;
+      emitAnalysisBranchState();
       currentUserId = null;
       liveInitialFen = null;
       moveHistory.reset();
@@ -845,7 +1229,16 @@ export function createGameController({
     },
     async startPuzzle() {
       abortStreams();
-      setLiveGame(null);
+      leaveLiveGame();
+      analysisMode = false;
+      interactionManager?.setInteractionOverride?.(null);
+      analysisEngine.stop();
+      analysisSanMoves = [];
+      analysisFenByPly = [];
+      analysisSnapshotsByFen = new Map();
+      analysisVisitedStates = [];
+      analysisVisitedIndex = -1;
+      emitAnalysisBranchState();
       onPuzzleStatus("Loading...");
       onPuzzleRating("--");
         onPuzzleSolution([]);
@@ -914,6 +1307,151 @@ export function createGameController({
     },
     exitPuzzle() {
       exitPuzzle();
+    },
+    async startFreeAnalysis() {
+      try {
+        onAnalysisStatus("loading");
+        abortStreams();
+        leaveLiveGame();
+        analysisEngine.stop();
+        analysisMode = true;
+        interactionManager?.setInteractionOverride?.(true);
+        analysisFen = normalizeFenOrNull(gameState.getFen());
+        analysisMoves = [];
+        analysisSanMoves = [];
+        analysisPly = 0;
+        analysisFenByPly = [];
+        analysisSnapshotsByFen = new Map();
+        analysisVisitedStates = [];
+        analysisVisitedIndex = -1;
+        emitAnalysisBranchState();
+        resetPuzzleState();
+        onResultChange("--");
+        onPlayersChange({ white: "White", black: "Black", playerColor: "w" });
+        onClocksChange({ white: "--:--", black: "--:--" });
+        onMenuVisibility(false);
+        moveHistory.reset();
+        moveHistory.setDisplayedHistory([]);
+        emitAnalysisMoveHistory();
+        onChatClear();
+        gameState.loadFromMoves({ fen: analysisFen, moves: [] });
+        analysisFenByPly = computeFenByPly({ fen: analysisFen, moves: analysisMoves });
+        setViewForColor("w");
+        const fen = gameState.getFen();
+        if (fen) {
+          analysisEngine.analyze(fen);
+        } else {
+          gameState.loadPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+          analysisEngine.analyze(gameState.getFen());
+        }
+        recordAnalysisVisitedState();
+      } catch (error) {
+        console.error("startFreeAnalysis failed", error);
+        onAnalysisStatus("error");
+      }
+    },
+    async startAnalysisFromLastGame() {
+      if (!lastAnalysisData) {
+        onAiStatus("No game to analyze");
+        return false;
+      }
+      abortStreams();
+      leaveLiveGame();
+      analysisMode = true;
+      interactionManager?.setInteractionOverride?.(true);
+      analysisFen = normalizeFenOrNull(lastAnalysisData.fen);
+      analysisMoves = Array.isArray(lastAnalysisData.moves) ? lastAnalysisData.moves.slice() : [];
+      analysisSanMoves = computeSanMovesFromLine({
+        fen: analysisFen,
+        moves: analysisMoves
+      });
+      analysisFenByPly = computeFenByPly({ fen: analysisFen, moves: analysisMoves });
+      analysisPly = analysisMoves.length;
+      analysisSnapshotsByFen = new Map();
+      analysisVisitedStates = [];
+      analysisVisitedIndex = -1;
+      emitAnalysisBranchState();
+      resetPuzzleState({ keepSolution: true });
+      onMenuVisibility(false);
+      onClocksChange({ white: "--:--", black: "--:--" });
+      if (lastAnalysisData.summary) {
+        onResultChange(lastAnalysisData.summary.resultText || "--");
+        onPlayersChange({
+          white: lastAnalysisData.summary.white || "White",
+          black: lastAnalysisData.summary.black || "Black",
+          playerColor: lastAnalysisData.summary.playerColor || "w"
+        });
+        setViewForColor(lastAnalysisData.summary.playerColor || "w");
+      }
+      moveHistory.setDisplayedHistory([]);
+      loadAnalysisPosition(analysisPly);
+      recordAnalysisVisitedState();
+      try {
+        analysisEngine.analyze(gameState.getFen());
+      } catch (error) {
+        onAnalysisStatus("error");
+      }
+      return true;
+    },
+    exitAnalysis() {
+      analysisMode = false;
+      interactionManager?.setInteractionOverride?.(null);
+      analysisEngine.stop();
+      analysisSanMoves = [];
+      analysisFenByPly = [];
+      analysisSnapshotsByFen = new Map();
+      analysisVisitedStates = [];
+      analysisVisitedIndex = -1;
+      emitAnalysisBranchState();
+      onMenuVisibility(true);
+    },
+    setInteractionOverride(value) {
+      interactionManager?.setInteractionOverride?.(value);
+    },
+    analysisPrev() {
+      if (!analysisMode) {
+        return;
+      }
+      if (analysisVisitedIndex > 0) {
+        restoreAnalysisVisitedState(analysisVisitedIndex - 1);
+        return;
+      }
+      loadAnalysisPosition(analysisPly - 1);
+    },
+    analysisNext() {
+      if (!analysisMode) {
+        return;
+      }
+      if (analysisVisitedIndex >= 0 && analysisVisitedIndex < analysisVisitedStates.length - 1) {
+        restoreAnalysisVisitedState(analysisVisitedIndex + 1);
+        return;
+      }
+      loadAnalysisPosition(analysisPly + 1);
+    },
+    analysisReset() {
+      if (!analysisMode) {
+        return;
+      }
+      loadAnalysisPosition(analysisMoves.length);
+    },
+    analysisGoToPly(ply) {
+      if (!analysisMode) {
+        return;
+      }
+      if (!Number.isFinite(Number(ply))) {
+        return;
+      }
+      loadAnalysisPosition(ply);
+    },
+    analysisGoToBranch(index) {
+      if (!analysisMode) {
+        return;
+      }
+      const numeric = Number(index);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      restoreAnalysisVisitedState(Math.trunc(numeric), { stopAtDiff: true });
     },
     async challengeStockfish() {
       onAiStatus("Sending...");
