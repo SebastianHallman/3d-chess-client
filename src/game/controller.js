@@ -838,6 +838,13 @@ export function createGameController({
     });
   }
 
+  function ensureEventStream() {
+    if (!isLoggedIn()) {
+      return;
+    }
+    streamEvents().catch(() => {});
+  }
+
   function getPerfRating(perfs, key) {
     const rating = perfs?.[key]?.rating;
     return Number.isFinite(rating) ? rating : null;
@@ -1112,6 +1119,7 @@ export function createGameController({
   function exitPuzzle() {
     resetPuzzleState();
     onMenuVisibility(true);
+    ensureEventStream();
   }
 
   function loadAnalysisPosition(nextPly) {
@@ -1404,6 +1412,7 @@ export function createGameController({
       analysisVisitedIndex = -1;
       emitAnalysisBranchState();
       onMenuVisibility(true);
+      ensureEventStream();
     },
     setInteractionOverride(value) {
       interactionManager?.setInteractionOverride?.(value);
@@ -1473,6 +1482,7 @@ export function createGameController({
     },
     async challengeUser(username, timeControl) {
       onAiStatus("Sending...");
+      ensureEventStream();
       try {
         const data = await lichessApi.challengeUser(requireToken(), username, timeControl);
         const challengeId = data?.challenge?.id || data?.id;
@@ -1484,6 +1494,7 @@ export function createGameController({
     },
     async challengeOpen(timeControl) {
       onAiStatus("Seeking...");
+      ensureEventStream();
       try {
         await lichessApi.seekGame(requireToken(), timeControl);
         onAiStatus("Seeking...");
@@ -1533,6 +1544,7 @@ export function createGameController({
       });
     },
     async acceptChallenge(challengeId) {
+      ensureEventStream();
       await lichessApi.acceptChallenge(requireToken(), challengeId);
     },
     async declineChallenge(challengeId) {
