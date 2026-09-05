@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { pieceSets } from "../pieceSets.js";
 
 const defaultPieceModelFiles = {
   p: "pawn.glb",
@@ -20,10 +21,14 @@ const defaultPieceModelHeights = {
 };
 
 export function createPieceAssets({
+  pieceSet = "classic",
   pieceModelBaseUrl = "/chess-piece-models",
   pieceModelFiles = defaultPieceModelFiles,
   pieceModelHeights = defaultPieceModelHeights
 } = {}) {
+  const initialSet = pieceSets[pieceSet] || pieceSets.classic;
+  pieceModelBaseUrl = initialSet.baseUrl;
+  pieceModelHeights = initialSet.heights || pieceModelHeights;
   const pieceMaterials = {
     w: new THREE.MeshStandardMaterial({ color: 0xf5f0e6 }),
     b: new THREE.MeshStandardMaterial({
@@ -34,6 +39,25 @@ export function createPieceAssets({
   };
   let pieceModels = null;
   let pieceModelPromise = null;
+
+  async function setPieceSet(id, canApply = () => true) {
+    if (!Object.hasOwn(pieceSets, id)) return false;
+    await loadPieceModels();
+    const next = createPieceAssets({ pieceSet: id });
+    const models = await next.loadPieceModels();
+    Object.values(next.pieceMaterials).forEach((material) => material.dispose());
+    if (!models) return false;
+    if (!canApply()) {
+      Object.values(models).forEach(({ root }) => disposeObject(root));
+      return false;
+    }
+    if (pieceModels) {
+      Object.values(pieceModels).forEach(({ root }) => disposeObject(root));
+    }
+    pieceModels = models;
+    pieceModelPromise = Promise.resolve(models);
+    return true;
+  }
 
   function loadPieceModels() {
     if (pieceModelPromise) {
@@ -46,6 +70,7 @@ export function createPieceAssets({
           `${pieceModelBaseUrl}/${filename}`,
           (gltf) => {
             const root = gltf.scene;
+            root.rotation.y = initialSet.rotations?.[type] ?? 0;
             const box = new THREE.Box3().setFromObject(root);
             const size = new THREE.Vector3();
             box.getSize(size);
@@ -118,9 +143,11 @@ export function createPieceAssets({
       return null;
     }
     const { root, scale, baseOffset } = pieceModels[type];
-    const instance = root.clone(true);
-    instance.scale.setScalar(scale);
-    instance.position.y = baseOffset;
+    const instance = new THREE.Group();
+    const model = root.clone(true);
+    model.scale.setScalar(scale);
+    model.position.y = baseOffset;
+    instance.add(model);
     tintModel(instance, pieceMaterials[color].color.getHex(), color === "b");
     instance.userData.baseY = 0.1;
     return instance;
@@ -219,6 +246,7 @@ export function createPieceAssets({
 
   return {
     pieceMaterials,
+    setPieceSet,
     loadPieceModels,
     createModelPiece,
     createPrimitivePiece,

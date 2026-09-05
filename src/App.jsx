@@ -7,6 +7,7 @@ import ProfileCard from "./components/ProfileCard.jsx";
 import IncomingChallenge from "./components/IncomingChallenge.jsx";
 import GameSidePanel from "./components/GameSidePanel.jsx";
 import PromotionPicker from "./components/PromotionPicker.jsx";
+import { pieceSets, getSavedPieceSet } from "./game/pieceSets.js";
 
 const lichessConfig = {
   clientId: "mtqkБpnb",
@@ -19,6 +20,10 @@ const lichessConfig = {
 export default function App() {
   const canvasRef = useRef(null);
   const controllerRef = useRef(null);
+  const [pieceSet, setPieceSet] = useState(getSavedPieceSet);
+  const initialPieceSet = useRef(pieceSet);
+  const [pieceSetLoading, setPieceSetLoading] = useState(false);
+  const [pieceSetError, setPieceSetError] = useState("");
 
   const [authed, setAuthed] = useState(false);
   const [loginStatus, setLoginStatus] = useState("");
@@ -52,6 +57,7 @@ export default function App() {
   const controllerCallbacks = useMemo(
     () => ({
       config: lichessConfig,
+      pieceSet: initialPieceSet.current,
       onAuthChange: setAuthed,
       onLoginStatus: setLoginStatus,
       onTurnChange: setTurn,
@@ -148,6 +154,24 @@ export default function App() {
       await controllerRef.current.login();
     } catch (error) {
       setLoginStatus("Missing Lichess config.");
+    }
+  };
+
+  const handlePieceSetChange = async (event) => {
+    const id = event.target.value;
+    setPieceSetLoading(true);
+    setPieceSetError("");
+    try {
+      if (await controllerRef.current.setPieceSet(id)) {
+        setPieceSet(id);
+        try { localStorage.setItem("chess-piece-set", id); } catch {}
+      } else {
+        setPieceSetError("Could not switch pieces. Please try again.");
+      }
+    } catch {
+      setPieceSetError("Could not load pieces. Please try again.");
+    } finally {
+      setPieceSetLoading(false);
     }
   };
 
@@ -311,6 +335,17 @@ export default function App() {
       <Login visible={!authed} status={loginStatus} onLogin={handleLogin} />
 
       <div className="game">
+        <div className="piece-set-control">
+          <label htmlFor="piece-set">Piece set</label>
+          <select id="piece-set" value={pieceSet} onChange={handlePieceSetChange}
+            disabled={pieceSetLoading} aria-busy={pieceSetLoading}>
+            {Object.entries(pieceSets).map(([id, set]) => (
+              <option key={id} value={id}>{set.label}</option>
+            ))}
+          </select>
+          {pieceSetLoading && <span role="status">Loading…</span>}
+          {pieceSetError && <span role="alert">{pieceSetError}</span>}
+        </div>
         <button className="fullscreen-button" type="button" onClick={handleToggleFullscreen}>
           {isFullscreen ? "<>" : "<>"}
         </button>
@@ -412,6 +447,7 @@ export default function App() {
         <canvas className="scene" ref={canvasRef} />
         {promotionRequest ? (
           <PromotionPicker
+            pieceSet={pieceSet}
             request={promotionRequest}
             onPick={handlePromotionPick}
             onCancel={handlePromotionCancel}
