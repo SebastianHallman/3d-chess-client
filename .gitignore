@@ -13,3 +13,5 @@ pnpm-debug.log*
 .eslintcache
 .parcel-cache
 coverage
+.playwright-cli/
+output/playwright/

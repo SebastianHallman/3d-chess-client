@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { pieceSets } from "../game/pieceSets.js";
 
 const pieceModelFiles = {
   q: "queen.glb",
@@ -66,10 +67,11 @@ function disposeObject(object) {
   });
 }
 
-function PromotionModel({ piece, color }) {
+function PromotionModel({ piece, color, pieceSet }) {
   const canvasRef = useRef(null);
   const palette = pieceColors[color === "b" ? "b" : "w"];
   const filename = pieceModelFiles[piece];
+  const baseUrl = (pieceSets[pieceSet] || pieceSets.classic).baseUrl;
   const targetHeight = pieceModelHeights[piece] ?? 0.8;
 
   useEffect(() => {
@@ -89,6 +91,7 @@ function PromotionModel({ piece, color }) {
     scene.add(key);
 
     let model = null;
+    let active = true;
     let frame = null;
     const loader = new GLTFLoader();
 
@@ -102,8 +105,9 @@ function PromotionModel({ piece, color }) {
     resize();
 
     loader.load(
-      `/chess-piece-models/${filename}`,
+      `${baseUrl}/${filename}`,
       (gltf) => {
+        if (!active) { disposeObject(gltf.scene); return; }
         model = gltf.scene;
         const box = new THREE.Box3().setFromObject(model);
         const size = new THREE.Vector3();
@@ -133,6 +137,7 @@ function PromotionModel({ piece, color }) {
     window.addEventListener("resize", handleResize);
 
     return () => {
+      active = false;
       window.removeEventListener("resize", handleResize);
       if (frame) {
         window.cancelAnimationFrame(frame);
@@ -142,12 +147,12 @@ function PromotionModel({ piece, color }) {
       }
       renderer.dispose();
     };
-  }, [filename, palette, targetHeight]);
+  }, [filename, palette, targetHeight, baseUrl]);
 
   return <canvas className="promotion-canvas" ref={canvasRef} />;
 }
 
-export default function PromotionPicker({ request, onPick, onCancel }) {
+export default function PromotionPicker({ request, onPick, onCancel, pieceSet = "classic" }) {
   const options = useMemo(() => request?.options || [], [request]);
   const color = request?.color || "w";
 
@@ -163,7 +168,7 @@ export default function PromotionPicker({ request, onPick, onCancel }) {
               type="button"
               onClick={() => onPick(piece)}
             >
-              <PromotionModel piece={piece} color={color} />
+              <PromotionModel piece={piece} color={color} pieceSet={pieceSet} />
               <span className="promotion-option-label">{piece.toUpperCase()}</span>
             </button>
           ))}

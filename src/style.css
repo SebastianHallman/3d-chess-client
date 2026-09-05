@@ -33,6 +33,34 @@ body {
   position: relative;
 }
 
+.piece-set-control {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #241f1b;
+  color: #f7f4ef;
+  font-size: 0.85rem;
+}
+
+.piece-set-control select {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid #776d61;
+  border-radius: 6px;
+  background: #f7f4ef;
+  color: #241f1b;
+}
+
+.piece-set-control [role="alert"] { flex-basis: 100%; }
+
 .login {
   position: absolute;
   inset: 0;

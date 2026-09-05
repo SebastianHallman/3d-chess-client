@@ -58,6 +58,7 @@ const DEFAULT_CONFIG = {
 
 export function createGameController({
   config,
+  pieceSet = "classic",
   onAuthChange = () => {},
   onLoginStatus = () => {},
   onTurnChange = () => {},
@@ -129,7 +130,7 @@ export function createGameController({
     invalidMaterial
   } = createBoardMaterials();
 
-  const pieceAssets = createPieceAssets();
+  const pieceAssets = createPieceAssets({ pieceSet });
 
   const cameraTargetVectors = {
     white: new THREE.Vector3(...cameraTargets.white),
@@ -1163,6 +1164,33 @@ export function createGameController({
   }
 
   return {
+    async setPieceSet(id) {
+      if (isAnimatingMove || dragState || moveQueue.length) return false;
+      const loaded = await pieceAssets.setPieceSet(id,
+        () => isSceneActive && !isAnimatingMove && !dragState && !moveQueue.length);
+      if (!loaded || !isSceneActive) return false;
+      if (isAnimatingMove || moveQueue.length) {
+        pendingSync = true;
+      } else {
+        clearSelection();
+        syncPieces();
+      }
+      for (const color of ["w", "b"]) {
+        const previous = capturedPieces[color].slice();
+        const group = color === "w" ? capturedWhiteGroup : capturedBlackGroup;
+        capturedPieces[color].length = 0;
+        for (const old of previous) {
+          const mesh = createModelPiece(old.userData.type, color)
+            || createPrimitivePiece(old.userData.type, color);
+          mesh.userData = { ...old.userData, baseY: mesh.userData.baseY };
+          mesh.rotation.copy(old.rotation);
+          group.remove(old);
+          disposeObject(old);
+          addCapturedPiece(mesh, color);
+        }
+      }
+      return true;
+    },
     init(canvas) {
       initScene(canvas);
       onMenuVisibility(!liveGameId);
